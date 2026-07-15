@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import inspect
 import importlib.util
+import inspect
 import os
 import re
 import sys
@@ -16,21 +16,12 @@ from blessed import Terminal
 
 
 THIS_FILE = Path(__file__).resolve()
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-
-# Blessed 256-color blue.
-BLUE = 33
-
 VERSION = "Version 0.1.0"
-PROJECT_NAME = "LTEForge"
+BLUE = 39
 
 
 def blue(term: Terminal, text: str) -> str:
     return term.color(BLUE) + text + term.normal
-
-
-def clean_len(text: str) -> int:
-    return len(ANSI_RE.sub("", text))
 
 
 def clear_screen() -> None:
@@ -38,21 +29,14 @@ def clear_screen() -> None:
 
 
 def find_project_root(start: Path) -> Path:
-    """
-    Search upward until a project containing framework/labs is found.
-    """
-
     for path in [start, *start.parents]:
         labs_dir = path / "framework" / "labs"
 
         if labs_dir.exists() and labs_dir.is_dir():
             return path
 
-    print(f"[{PROJECT_NAME}] Could not find project root.")
-    print(
-        f"[{PROJECT_NAME}] Expected a directory at: "
-        "framework/labs"
-    )
+    print("[LTEForge] Could not find project root.")
+    print("[LTEForge] Expected framework/labs.")
     sys.exit(1)
 
 
@@ -68,23 +52,17 @@ class LabInfo:
     function: Callable[[], object]
 
 
-ascii_art = r"""
-                                      ▪  ▪  ▪
-                                        ▪█▪
-                                         █
-                                   ▄▄    █    ▄▄
-                                     ▀▄  █  ▄▀
-                                       ▀██▀
-                                        ██▄
-                                        █  ▀▄
-                                        █    ▀▄
-                                        █    ▄▀
-                                        █  ▄▀
-                                       ▄██▄
-                                     ▄▀  █  ▀▄
-                                   ▀▀    █    ▀▀
-                                         █
-                                        ▄█▄
+ASCII_ART = r"""
+                                                    BBBB
+                                                    BBBB
+                                              BBBB  BBBB
+                                              BBBB  BBBB
+                                        BBBB  BBBB  BBBB
+                                        BBBB  BBBB  BBBB
+                                  BBBB  BBBB  BBBB  BBBB
+                                  BBBB  BBBB  BBBB  BBBB
+                            BBBB  BBBB  BBBB  BBBB  BBBB
+                            BBBB  BBBB  BBBB  BBBB  BBBB
 
               ██╗     ████████╗███████╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
               ██║     ╚══██╔══╝██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
@@ -96,32 +74,14 @@ ascii_art = r"""
 
 
 def create_module_name(file_path: Path) -> str:
-    """
-    Create a unique import name so labs with similar filenames do not
-    overwrite one another in Python's module system.
-    """
-
-    safe_stem = re.sub(r"[^a-zA-Z0-9_]", "_", file_path.stem)
-
-    return f"lteforge_lab_{safe_stem}_{abs(hash(file_path))}"
+    safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", file_path.stem)
+    return f"lteforge_lab_{safe_name}_{abs(hash(file_path))}"
 
 
-def import_module_and_get_function(
-    file_path: Path,
-    module_name: str,
-) -> LabInfo | None:
-    """
-    Import one lab module and locate its launch function.
-
-    Function priority:
-        1. run()
-        2. main()
-        3. First public function defined by that module
-    """
-
+def import_lab(file_path: Path) -> LabInfo | None:
     try:
         spec = importlib.util.spec_from_file_location(
-            module_name,
+            create_module_name(file_path),
             file_path,
         )
 
@@ -130,17 +90,13 @@ def import_module_and_get_function(
 
         module = importlib.util.module_from_spec(spec)
 
-        # Makes imports relative to the project easier for lab modules.
         if str(PROJECT_ROOT) not in sys.path:
             sys.path.insert(0, str(PROJECT_ROOT))
 
         spec.loader.exec_module(module)
 
     except Exception as error:
-        print(
-            f"[{PROJECT_NAME}] Could not import "
-            f"{file_path.name}: {error}"
-        )
+        print(f"[LTEForge] Failed to import {file_path.name}: {error}")
         return None
 
     function: Callable[[], object] | None = None
@@ -162,7 +118,6 @@ def import_module_and_get_function(
             and func.__module__ == module.__name__
             and name
             not in {
-                "find_project_root",
                 "find_gnuradio_companion",
                 "run_python_flowgraph",
                 "open_grc_file",
@@ -170,14 +125,17 @@ def import_module_and_get_function(
         }
 
         if functions:
-            _, function = next(iter(functions.items()))
+            function = next(iter(functions.values()))
 
     if function is None:
         return None
 
-    default_name = file_path.stem.replace("_", " ").title()
+    name = getattr(
+        module,
+        "LAB_NAME",
+        file_path.stem.replace("_", " ").title(),
+    )
 
-    name = getattr(module, "LAB_NAME", default_name)
     desc = getattr(
         module,
         "LAB_DESC",
@@ -193,14 +151,7 @@ def import_module_and_get_function(
 
 
 def discover_labs() -> List[LabInfo]:
-    """
-    Discover all valid Python lab modules inside framework/labs.
-    """
-
     labs: List[LabInfo] = []
-
-    if not LABS_DIR.exists():
-        return labs
 
     for file_path in sorted(LABS_DIR.glob("*.py")):
         if file_path.name.startswith("_"):
@@ -209,64 +160,58 @@ def discover_labs() -> List[LabInfo]:
         if file_path.resolve() == THIS_FILE:
             continue
 
-        module_name = create_module_name(file_path)
-
-        lab = import_module_and_get_function(
-            file_path,
-            module_name,
-        )
+        lab = import_lab(file_path)
 
         if lab is not None:
             labs.append(lab)
 
-    labs.sort(key=lambda item: item.name.lower())
-
+    labs.sort(key=lambda lab: lab.name.lower())
     return labs
 
 
-def draw_box(
+def render_logo_line(term: Terminal, line: str) -> str:
+    return "".join(
+        blue(term, "█") if character == "B" else character
+        for character in line
+    )
+
+
+def print_logo(
     term: Terminal,
     top: int,
-    left: int,
-    width: int,
-    height: int,
-    title: str,
-) -> None:
-    title_text = f" {title} "
-    available_width = width - 2
-    side = max(
-        (available_width - len(title_text)) // 2,
-        0,
+    center_left: int,
+    center_width: int,
+) -> int:
+    lines = textwrap.dedent(ASCII_ART).strip("\n").splitlines()
+
+    logo_width = max(
+        len(line.replace("B", "█"))
+        for line in lines
     )
 
-    remaining = max(
-        available_width - side - len(title_text),
-        0,
-    )
+    menu_center = center_left + center_width // 2
+    logo_left = menu_center - logo_width // 2
 
-    print(
-        term.move(top, left)
-        + "┌"
-        + "─" * side
-        + title_text
-        + "─" * remaining
-        + "┐"
-    )
+    for row, line in enumerate(lines):
+        screen_row = top + row
 
-    for row in range(height):
+        if screen_row < 0:
+            continue
+
         print(
-            term.move(top + 1 + row, left)
-            + "│"
-            + " " * (width - 2)
-            + "│"
+            term.move(screen_row, logo_left)
+            + render_logo_line(term, line)
         )
 
-    print(
-        term.move(top + height + 1, left)
-        + "└"
-        + "─" * (width - 2)
-        + "┘"
-    )
+    by_row = top + len(lines)
+
+    if by_row >= 0:
+        print(
+            term.move(by_row, logo_left)
+            + blue(term, "By BHIS")
+        )
+
+    return by_row + 1
 
 
 def draw_outer_box(
@@ -275,118 +220,135 @@ def draw_outer_box(
     left: int,
     width: int,
     height: int,
-    version: str = VERSION,
 ) -> None:
-    label = f"|{version}|"
+    label = f"|{VERSION}|"
 
-    line_length = max(
-        width - len(label) - 2,
-        0,
-    )
-
-    top_line = (
-        "┌"
+    print(
+        term.move(top, left)
+        + "┌"
         + label
-        + "─" * line_length
+        + "─" * max(width - len(label) - 2, 0)
         + "┐"
     )
 
-    print(term.move(top, left) + top_line)
-
     for row in range(height):
         print(
-            term.move(top + 1 + row, left)
+            term.move(top + row + 1, left)
             + "│"
-            + " " * (width - 2)
+            + " " * max(width - 2, 0)
             + "│"
         )
 
     print(
         term.move(top + height + 1, left)
         + "└"
-        + "─" * (width - 2)
+        + "─" * max(width - 2, 0)
         + "┘"
     )
 
 
-def print_logo(
+def draw_inner_box(
     term: Terminal,
     top: int,
-    art: str,
-    center_left: int,
-    center_width: int,
-) -> int:
-    lines = textwrap.dedent(art).strip("\n").splitlines()
+    left: int,
+    width: int,
+    height: int,
+    title: str,
+) -> None:
+    title_text = f" {title} "
+    available = width - 2
 
-    logo_width = max(
-        clean_len(line)
-        for line in lines
-    )
-
-    logo_left = center_left + max(
-        (center_width - logo_width) // 2,
+    left_line = max(
+        (available - len(title_text)) // 2,
         0,
     )
 
-    for row, line in enumerate(lines):
-        # The ▪ characters become the blue accent details.
-        rendered_line = line.replace(
-            "▪",
-            blue(term, "▪"),
-        )
-
-        print(
-            term.move(top + row, logo_left)
-            + rendered_line
-        )
-
-    by_text = "By BHIS"
-    by_row = top + len(lines)
+    right_line = max(
+        available - left_line - len(title_text),
+        0,
+    )
 
     print(
-        term.move(by_row, logo_left)
-        + blue(term, by_text)
+        term.move(top, left)
+        + "┌"
+        + "─" * left_line
+        + title_text
+        + "─" * right_line
+        + "┐"
     )
 
-    return by_row + 1
-
-
-def calculate_dimensions(term: Terminal) -> tuple[int, int, int]:
-    """
-    Scale the menu down slightly on smaller terminals.
-    """
-
-    available_width = max(term.width - 6, 60)
-
-    preferred_lab_width = 33
-    preferred_desc_width = 55
-    gap = 4
-
-    preferred_inner_width = (
-        preferred_lab_width
-        + gap
-        + preferred_desc_width
-    )
-
-    if available_width >= preferred_inner_width + 4:
-        return (
-            preferred_lab_width,
-            preferred_desc_width,
-            gap,
+    for row in range(height):
+        print(
+            term.move(top + row + 1, left)
+            + "│"
+            + " " * max(width - 2, 0)
+            + "│"
         )
 
-    gap = 2
-    lab_width = max(
-        min(29, available_width // 3),
-        20,
+    print(
+        term.move(top + height + 1, left)
+        + "└"
+        + "─" * max(width - 2, 0)
+        + "┘"
     )
 
-    desc_width = max(
-        available_width - lab_width - gap - 4,
-        30,
-    )
 
-    return lab_width, desc_width, gap
+def truncate(text: str, maximum: int) -> str:
+    if len(text) <= maximum:
+        return text
+
+    if maximum <= 3:
+        return text[:maximum]
+
+    return text[: maximum - 3] + "..."
+
+
+def calculate_layout(
+    term: Terminal,
+) -> tuple[int, int, int, int, int]:
+    if term.width >= 105:
+        lab_width = 35
+        desc_width = 57
+        gap = 4
+
+    elif term.width >= 85:
+        lab_width = 28
+        desc_width = 45
+        gap = 3
+
+    else:
+        available = max(term.width - 10, 54)
+        gap = 2
+        lab_width = max(20, available // 3)
+
+        desc_width = max(
+            28,
+            available - lab_width - gap,
+        )
+
+    if term.height >= 49:
+        box_height = 8
+        logo_top = 0
+
+    elif term.height >= 44:
+        box_height = 6
+        logo_top = -1
+
+    elif term.height >= 39:
+        box_height = 4
+        logo_top = -3
+
+    else:
+        box_height = 3
+        logo_top = -5
+
+    return (
+        lab_width,
+        desc_width,
+        gap,
+        box_height,
+        logo_top,
+    )
 
 
 def print_menu(
@@ -397,56 +359,56 @@ def print_menu(
     with term.hidden_cursor():
         print(term.clear)
 
-        lab_width, desc_width, gap = calculate_dimensions(term)
-
-        available_height = max(term.height - 30, 6)
-        box_height = min(12, available_height)
+        (
+            lab_width,
+            desc_width,
+            gap,
+            box_height,
+            logo_top,
+        ) = calculate_layout(term)
 
         inner_width = lab_width + gap + desc_width
-        outer_width = inner_width + 4
+        outer_width = inner_width + 6
 
         outer_left = max(
             (term.width - outer_width) // 2,
             0,
         )
 
-        inner_left = outer_left + 2
-
         logo_bottom = print_logo(
-            term=term,
-            top=1,
-            art=ascii_art,
-            center_left=outer_left,
-            center_width=outer_width,
+            term,
+            logo_top,
+            outer_left,
+            outer_width,
         )
 
-        outer_top = logo_bottom + 1
-        outer_height = box_height + 2
+        outer_top = max(logo_bottom, 0)
+        outer_height = box_height + 3
+
+        lab_left = outer_left + 2
+        desc_left = lab_left + lab_width + gap
+        inner_top = outer_top + 1
 
         draw_outer_box(
-            term=term,
-            top=outer_top,
-            left=outer_left,
-            width=outer_width,
-            height=outer_height,
+            term,
+            outer_top,
+            outer_left,
+            outer_width,
+            outer_height,
         )
 
-        lab_left = inner_left
-        desc_left = lab_left + lab_width + gap
-        box_top = outer_top + 1
-
-        draw_box(
+        draw_inner_box(
             term,
-            box_top,
+            inner_top,
             lab_left,
             lab_width,
             box_height,
             "Labs",
         )
 
-        draw_box(
+        draw_inner_box(
             term,
-            box_top,
+            inner_top,
             desc_left,
             desc_width,
             box_height,
@@ -455,54 +417,48 @@ def print_menu(
 
         current_lab = labs[selected_index]
 
-        start = max(
+        start_index = max(
             selected_index - box_height + 1,
             0,
         )
 
         visible_labs = labs[
-            start:start + box_height
+            start_index:start_index + box_height
         ]
 
         for row, lab in enumerate(visible_labs):
-            real_index = start + row
+            actual_index = start_index + row
 
-            max_name_length = max(
-                lab_width - 4,
-                1,
+            name = truncate(
+                lab.name,
+                max(lab_width - 5, 1),
             )
 
-            name = lab.name[:max_name_length]
-
-            if real_index == selected_index:
-                rendered = blue(term, name)
-            else:
-                rendered = name
+            rendered = (
+                blue(term, name)
+                if actual_index == selected_index
+                else name
+            )
 
             print(
                 term.move(
-                    box_top + 1 + row,
+                    inner_top + row + 1,
                     lab_left + 2,
                 )
                 + rendered
             )
 
-        description_width = max(
-            desc_width - 5,
-            10,
-        )
-
-        wrapped_description = textwrap.wrap(
+        wrapped = textwrap.wrap(
             current_lab.desc,
-            width=description_width,
+            width=max(desc_width - 5, 10),
+            break_long_words=False,
+            break_on_hyphens=False,
         )
 
-        for row, line in enumerate(
-            wrapped_description[:box_height]
-        ):
+        for row, line in enumerate(wrapped[:box_height]):
             print(
                 term.move(
-                    box_top + 1 + row,
+                    inner_top + row + 1,
                     desc_left + 2,
                 )
                 + line
@@ -520,10 +476,16 @@ def print_menu(
             0,
         )
 
-        footer_row = outer_top + outer_height + 3
+        footer_row = min(
+            outer_top + outer_height + 2,
+            max(term.height - 1, 0),
+        )
 
         print(
-            term.move(footer_row, footer_left)
+            term.move(
+                footer_row,
+                max(footer_left, 0),
+            )
             + blue(term, footer)
         )
 
@@ -534,8 +496,6 @@ def launch_lab(lab: LabInfo) -> None:
     try:
         result = lab.function()
 
-        # Prevent an immediate flash back to the menu when a lab
-        # finishes without handling its own pause.
         if result is not None:
             print(result)
 
@@ -544,10 +504,8 @@ def launch_lab(lab: LabInfo) -> None:
 
     except Exception as error:
         clear_screen()
-
-        print(f"\n[{PROJECT_NAME}] Error launching lab:\n")
+        print(f"\n[LTEForge] Error launching {lab.name}:\n")
         print(error)
-
         input("\nPress ENTER to return...")
 
 
@@ -555,60 +513,63 @@ def main() -> None:
     labs = discover_labs()
 
     if not labs:
-        print(f"[{PROJECT_NAME}] No labs found.")
-        print(f"[{PROJECT_NAME}] Lab directory: {LABS_DIR}")
-        print(
-            f"[{PROJECT_NAME}] Each lab must define run(), "
-            "main(), or another public function."
-        )
+        print("[LTEForge] No labs found.")
+        print(f"[LTEForge] Lab directory: {LABS_DIR}")
         sys.exit(1)
 
     term = Terminal()
-    current_row = 0
+    selected_index = 0
 
     with term.cbreak(), term.fullscreen():
         while True:
-            # Rediscover on every redraw after refresh, but preserve
-            # the currently selected position when possible.
-            current_row = min(
-                current_row,
+            selected_index = min(
+                selected_index,
                 len(labs) - 1,
             )
 
             print_menu(
                 term,
                 labs,
-                current_row,
+                selected_index,
             )
 
             key = term.inkey()
 
             if key.code == term.KEY_UP:
-                if current_row > 0:
-                    current_row -= 1
+                if selected_index > 0:
+                    selected_index -= 1
 
             elif key.code == term.KEY_DOWN:
-                if current_row < len(labs) - 1:
-                    current_row += 1
+                if selected_index < len(labs) - 1:
+                    selected_index += 1
 
             elif key.code in (
                 term.KEY_ENTER,
                 "\n",
                 "\r",
             ):
-                launch_lab(labs[current_row])
+                launch_lab(labs[selected_index])
 
             elif key.lower() == "r":
-                labs = discover_labs()
+                selected_name = labs[selected_index].name
+                refreshed = discover_labs()
 
-                if not labs:
+                if not refreshed:
                     clear_screen()
-                    print(f"[{PROJECT_NAME}] No labs found.")
+                    print("[LTEForge] No labs found.")
                     input("\nPress ENTER to return...")
-                    labs = discover_labs()
+                    continue
 
-                    if not labs:
-                        return
+                labs = refreshed
+
+                selected_index = next(
+                    (
+                        index
+                        for index, lab in enumerate(labs)
+                        if lab.name == selected_name
+                    ),
+                    0,
+                )
 
             elif key.lower() == "q":
                 clear_screen()
