@@ -1,0 +1,125 @@
+services:
+
+  epc:
+    build:
+      context: ..
+    container_name: lte-epc
+    command: >
+      srsepc
+      /etc/srsran/epc.conf
+      --mme.mme_bind_addr=10.10.10.10
+      --spgw.gtpu_bind_addr=10.10.10.10
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - SYS_NICE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      lte-net:
+        ipv4_address: 10.10.10.10
+
+  tower1:
+    build:
+      context: ..
+    container_name: lte-tower1
+    privileged: true
+    depends_on:
+      - epc
+    command: >
+      srsenb
+      /etc/srsran/enb.conf
+      --enb.mme_addr=10.10.10.10
+      --enb.gtp_bind_addr=10.10.10.20
+      --enb.s1c_bind_addr=10.10.10.20
+      --rf.device_name=zmq
+      --rf.device_args=fail_on_disconnect=true,tx_port=tcp://*:2000,rx_port=tcp://client1:2001,id=enb1,base_srate=23.04e6
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio:
+        soft: 99
+        hard: 99
+    networks:
+      lte-net:
+        ipv4_address: 10.10.10.20
+
+  client1:
+    build:
+      context: ..
+    container_name: lte-client1
+    privileged: true
+    depends_on:
+      - tower1
+    command: >
+      srsue
+      /etc/srsran/ue.conf
+      --rf.device_name=zmq
+      --rf.device_args=tx_port=tcp://*:2001,rx_port=tcp://tower1:2000,id=ue1,base_srate=23.04e6
+    cap_add:
+      - NET_ADMIN
+      - SYS_NICE
+    ulimits:
+      rtprio:
+        soft: 99
+        hard: 99
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - lte-net
+
+  tower2:
+    build:
+      context: ..
+    container_name: lte-tower2
+    privileged: true
+    depends_on:
+      - epc
+    command: >
+      srsenb
+      /etc/srsran/enb.conf
+      --enb.mme_addr=10.10.10.10
+      --enb.gtp_bind_addr=10.10.10.21
+      --enb.s1c_bind_addr=10.10.10.21
+      --rf.device_name=zmq
+      --rf.device_args=fail_on_disconnect=true,tx_port=tcp://*:2100,rx_port=tcp://client2:2101,id=enb2,base_srate=23.04e6
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio:
+        soft: 99
+        hard: 99
+    networks:
+      lte-net:
+        ipv4_address: 10.10.10.21
+
+  client2:
+    build:
+      context: ..
+    container_name: lte-client2
+    privileged: true
+    depends_on:
+      - tower2
+    command: >
+      srsue
+      /etc/srsran/ue.conf
+      --rf.device_name=zmq
+      --rf.device_args=tx_port=tcp://*:2101,rx_port=tcp://tower2:2100,id=ue2,base_srate=23.04e6
+    cap_add:
+      - NET_ADMIN
+      - SYS_NICE
+    ulimits:
+      rtprio:
+        soft: 99
+        hard: 99
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - lte-net
+
+networks:
+  lte-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.10.10.0/24
