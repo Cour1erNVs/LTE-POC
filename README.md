@@ -128,7 +128,7 @@ Check whether the clients successfully attached:
 ```powershell
 docker logs lte-client1 | findstr /I "Network attach"
 docker logs lte-client2 | findstr /I "Network attach"```
-
+```
 A successful client should show:
 
 ```text
