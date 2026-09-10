@@ -65,7 +65,7 @@ docker version
 ## 3. Clone LTE-POC
 
 ```powershell
-git clone https://github.com/Cour1erNVs/LTE-POC
+https://github.com/Cour1erNVs/LTE-POC
 ```
 
 Enter the framework directory:
