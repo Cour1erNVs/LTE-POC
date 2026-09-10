@@ -65,7 +65,7 @@ docker version
 ## 3. Clone LTE-POC
 
 ```powershell
-git clone https://github.com/Cour1erNVs/LTE-POC
+https://github.com/Cour1erNVs/LTE-POC
 ```
 
 Enter the framework directory:
@@ -126,10 +126,9 @@ docker compose -f .\generated\docker-compose.generated.yml ps -a
 Check whether the clients successfully attached:
 
 ```powershell
-docker logs lte-client1 | Select-String "Network attach successful"
-docker logs lte-client2 | Select-String "Network attach successful"
+docker logs lte-client1 | findstr /I "Network attach"
+docker logs lte-client2 | findstr /I "Network attach"```
 ```
-
 A successful client should show:
 
 ```text
